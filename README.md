@@ -35,7 +35,7 @@ You *have* to be in the backport folder when running the compile script so that 
 If your target machine is too old to download this code to compile it (most likely due to lack of HTTPS support, or the use of older versions of ftp/rsync/etc.. protocols), you can host it on your local network with a plain http server and download it on the old client with wget:
 
 ```
-cd dropbear-backport
+tar --format=ustar -zcpf dropbear-backport.tar.gz dropbear-backport
 python3 -m http.server 8000 &
 ```
 
@@ -57,6 +57,14 @@ chkconfig --list dropbear
 ```
 
 Edit the init script to change the port that the server runs on.
+
+### Usage Notes
+
+To scp a file from a modern system, the `-O` flag must be passed to use the legacy scp protocol.
+
+```
+scp -O -i ~/.ssh/id_ed25519 ./local_file user@system:~/
+```
 
 Contributing
 ------------
