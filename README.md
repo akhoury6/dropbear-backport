@@ -1,84 +1,73 @@
-## Dropbear SSH
+Dropbear SSH Backport to Old Linux
+==================================
+From the original author:
 A smallish SSH server and client
 https://matt.ucc.asn.au/dropbear/dropbear.html
 
-[INSTALL.md](INSTALL.md) has compilation instructions.
+About This Backport
+-------------------
 
-[MULTI.md](MULTI.md) has instructions on making a multi-purpose binary (ie a single binary which performs multiple tasks, to save disk space).
+This backport has been statically compiled and tested on RedHat 5.2 (1998). Since this uses C89 standards and syntax, in theory it *should* work on many other systems as well.
 
-[SMALL.md](SMALL.md) has some tips on creating small binaries.
+When completed, the following executables will be provided:
 
-A mirror of the Dropbear website and tarballs is available at https://dropbear.nl/mirror/.
+* `dropbear`
+	* ssh server
+* `dbclient`
+	* ssh client
+* `dropbearkey`
+	* rsa, ecdsa, and ed25519 key generation
+* `scp` or `dbscp` (if scp already exists on the system)
+	* file transfer over ssh
 
-Please contact me if you have any questions/bugs found/features/ideas/comments etc
-There is also a mailing list https://lists.ucc.asn.au/mailman/listinfo/dropbear
+Instructions
+------------
 
-Matt Johnston
-matt@ucc.asn.au
+### Step 1: Compile
 
-
-### In the absence of detailed documentation, some notes follow
-
-----
-#### Server public key auth
-
-You can use `~/.ssh/authorized_keys` in the same way as with OpenSSH, just put the key entries in that file.
-They should be of the form:
-
-    ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAIEAwVa6M6cGVmUcLl2cFzkxEoJd06Ub4bVDsYrWvXhvUV+ZAM9uGuewZBDoAqNKJxoIn0Hyd0NkyU99UVv6NWV/5YSHtnf35LKds56j7cuzoQpFIdjNwdxAN0PCET/MG8qyskG/2IE2DPNIaJ3Wy+Ws4IZEgdJgPlTYUBWWtCWOGc= someone@hostname
-
-You must make sure that `~/.ssh`, and the key file, are only writable by the user.
-Beware of editors that split the key into multiple lines.
-
-Dropbear supports some options for authorized_keys entries, see the manpage.
-
-----
-#### Client public key auth
-
-Dropbear can do public key auth as a client.
-But you will have to convert OpenSSH style keys to Dropbear format, or use dropbearkey to create them.
-
-If you have an OpenSSH-style private key `~/.ssh/id_rsa`, you need to do:
-
-```sh
-dropbearconvert openssh dropbear ~/.ssh/id_rsa  ~/.ssh/id_rsa.db
-dbclient -i ~/.ssh/id_rsa.db <hostname>
+```
+cd backport
+./dropbear-compile.sh
 ```
 
-Dropbear does not support encrypted hostkeys though can connect to ssh-agent.
+You *have* to be in the backport folder when running the compile script so that `$(pwd)` checks out. Old versions of bash do not play nice when trying to find the absolute directory of the script.
 
-----
-If you want to get the public-key portion of a Dropbear private key, look at dropbearkey's `-y` option.
-It will print both public key and fingerprint. If you need the pub key only you can grep by a prefix `ssh-`: 
-```sh
-./dropbearkey -y -f ~/.ssh/id_ed25519 | grep "^ssh-" > ~/.ssh/id_ed25519.pub
+If your target machine is too old to download this code to compile it (most likely due to lack of HTTPS support, or the use of older versions of ftp/rsync/etc.. protocols), you can host it on your local network with a plain http server and download it on the old client with wget:
+
+```
+cd dropbear-backport
+python3 -m http.server 8000 &
 ```
 
-----
-To run the server, you need to generate server keys, this is one-off:
+### Step 2: Install
 
-```sh
-./dropbearkey -t rsa -f dropbear_rsa_host_key
-./dropbearkey -t dss -f dropbear_dss_host_key
-./dropbearkey -t ecdsa -f dropbear_ecdsa_host_key
-./dropbearkey -t ed25519 -f dropbear_ed25519_host_key
+```
+cd backport
+./dropbear-install.sh
 ```
 
-Or alternatively convert OpenSSH keys to Dropbear:
+The installer will copy the executables to `/usr/sbin` and `/usr/bin` and generate the host keys for the ssh server. If the local system uses sysvinit then it will also create an init script.
 
-```sh
-./dropbearconvert openssh dropbear /etc/ssh/ssh_host_dsa_key dropbear_dss_host_key
+You can then start the server and verify it immediately with:
+
+```
+/etc/rc.d/init.d/dropbear start
+/etc/rc.d/init.d/dropbear status
+chkconfig --list dropbear
 ```
 
-You can also get Dropbear to create keys when the first connection is made - this is preferable to generating keys when the system boots.
-Make sure `/etc/dropbear/` exists and then pass `-R` to the dropbear server.
+Edit the init script to change the port that the server runs on.
 
-----
-If the server is run as non-root, you most likely won't be able to allocate a pty, and you cannot login as any user other than that running the daemon (obviously).
-Shadow passwords will also be unusable as non-root.
+Contributing
+------------
 
-----
-The Dropbear distribution includes a standalone version of OpenSSH's `scp` program.
-You can compile it with `make scp`.
-You may want to change the path of the ssh binary, specified by `_PATH_SSH_PROGRAM` in `options.h`.
-By default the progress meter isn't compiled in to save space, you can enable it by adding `SCPPROGRESS=1` to the `make` commandline.
+All of the modifications/patches can be found in the backport/ directory.
+
+You can try applying the patches to newer versions of dropbear as they are released, or you can modify the patches to work on additional systems.
+
+All modifications to the code must be put into the `backport/` folder so that the port can be re-applied to different versions of dropbear as needed, or to create different ports for different target systems. No direct changes to the codebase will be accepted.
+
+License
+-------
+
+The license for the backport code is in the `backport/` folder. Dropbear
