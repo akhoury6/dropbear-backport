@@ -242,6 +242,10 @@ else
 	echo "SysVinit layout not detected; skipping init script installation."
 fi
 
+perl -pi -e 's/^([^#]*22\/tcp)/#$1/' /etc/services
+perl -pi -e 's/(ftp\s+21\/tcp)/$1\nssh\t\t22\/tcp/' /etc/services
+echo "Added ssh 22/tcp to /etc/services"
+
 echo ""
 echo "Installed:"
 echo "  /usr/sbin/dropbear"
