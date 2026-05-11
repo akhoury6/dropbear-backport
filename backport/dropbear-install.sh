@@ -61,12 +61,12 @@ if [ -d /etc/skel ]; then
 fi
 
 # Initialize host keys
-mkdir -p /etc/dropbear
-chmod 0700 /etc/dropbear
-[ ! -f /etc/dropbear/dropbear_rsa_host_key ] && /usr/bin/dropbearkey -t rsa -s 4096 -f /etc/dropbear/dropbear_rsa_host_key
-[ ! -f /etc/dropbear/dropbear_ecdsa_host_key ] && /usr/bin/dropbearkey -t ecdsa -s 521 -f /etc/dropbear/dropbear_ecdsa_host_key
-[ ! -f /etc/dropbear/dropbear_ed25519_host_key ] && /usr/bin/dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key
-chmod 0400 /etc/dropbear/dropbear_*_host_key /etc/dropbear/dropbear_*_host_key.pub 2> /dev/null || true
+KEYDIR=/etc/dropbear
+mkdir -p "${KEYDIR}"
+chmod 0700 "${KEYDIR}"
+[ ! -f "${KEYDIR}/dropbear_rsa_host_key" ]     && "${DROPBEARKEY}" -t rsa     -s 4096 -C "$(hostname)" -f "${KEYDIR}/dropbear_rsa_host_key"     && chmod 0400 "${KEYDIR}/dropbear_rsa_host_key*"
+[ ! -f "${KEYDIR}/dropbear_ecdsa_host_key" ]   && "${DROPBEARKEY}" -t ecdsa   -s 521  -C "$(hostname)" -f "${KEYDIR}/dropbear_ecdsa_host_key"   && chmod 0400 "${KEYDIR}/dropbear_ecdsa_host_key"
+[ ! -f "${KEYDIR}/dropbear_ed25519_host_key" ] && "${DROPBEARKEY}" -t ed25519         -C "$(hostname)" -f "${KEYDIR}/dropbear_ed25519_host_key" && chmod 0400 "${KEYDIR}/dropbear_ed25519_host_key"
 
 # Install init script on systems that use SysVinit
 if [ -d /etc/rc.d/init.d ] && [ -d /etc/rc.d/rc0.d ] && \

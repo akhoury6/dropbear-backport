@@ -101,6 +101,29 @@ Edit the init script to change the port that the server runs on.
 
 ### Usage Notes
 
+#### SSH Daemon Options
+
+Dropbear sets options for the daemon (such ass permitting root logins or password logins) through command-line parameters. There's
+a field at the top of the init.d script which lets you customize these parameters for your setup. Run `dropbear --help` for a list
+of all of the supported flags.
+
+The installer will set the flags as: `DROPBEAR_FLAGS="-w -p 0.0.0.0:22"`, which disables root login and listens on port 22 on all
+interfaces. Use `-s` to disable all password logins.
+
+#### Host Keys
+
+The default locations for dropbear's host keys are in `/etc/dropbear`. You can use the init script to easily generate/rotate them.
+
+```
+# Generate missing keys
+/etc/rc.d/init.d/dropbear create_host_keys
+
+# Delete and re-generate all keys
+/etc/rc.d/init.d/dropbear create_host_keys --force
+```
+
+#### SCP
+
 To scp a file from a modern system, the `-O` flag must be passed to use the legacy scp protocol.
 
 ```

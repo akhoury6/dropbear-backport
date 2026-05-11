@@ -7,150 +7,183 @@
 # processname: dropbear
 # pidfile: /var/run/dropbear.pid
 
-DAEMON=/usr/sbin/dropbear
+
+## CONFIGURATION
+# Run 'dropbear --help' for a list of CLI parameters.
+# This script injects -P (pidfile), do not specify one here.
+DROPBEAR_FLAGS="-w -p 0.0.0.0:22"
+
+
+## VARS
+DAEMON_BASE=/usr/sbin/dropbear
 DROPBEARKEY=/usr/bin/dropbearkey
 PIDFILE=/var/run/dropbear.pid
 KEYDIR=/etc/dropbear
-PORT=22
 
-[ -x "$DAEMON" ] || exit 1
-[ -x "$DROPBEARKEY" ] || exit 1
+[ -x "${DAEMON_BASE}" ] || exit 1
+[ -x "${DROPBEARKEY}" ] || exit 1
 
-create_keys() {
-	mkdir -p "$KEYDIR"
+case "$(file -b "${DAEMON_BASE}" | head -n 1)" in
+	*executable*)
+		DAEMON=/usr/sbin/dropbear ;;
+	*script*)
+		case `uname -m` in
+			i386) DAEMON="/usr/sbin/dropbear-386" ;;
+			*) DAEMON="/usr/sbin/dropbear-486" ;;
+		esac ;;
+	*)
+		exit 1 ;;
+esac
 
-	if [ ! -f "$KEYDIR/dropbear_rsa_host_key" ]; then
-		"$DROPBEARKEY" -t rsa -s 4096 -f "$KEYDIR/dropbear_rsa_host_key"
-	fi
-	if [ ! -f "$KEYDIR/dropbear_ecdsa_host_key" ]; then
-		"$DROPBEARKEY" -t ecdsa -s 521 -f "$KEYDIR/dropbear_ecdsa_host_key"
-	fi
-	if [ ! -f "$KEYDIR/dropbear_ed25519_host_key" ]; then
-		"$DROPBEARKEY" -t ed25519 -f "$KEYDIR/dropbear_ed25519_host_key"
-	fi
+[ -x "${DAEMON}" ] || exit 1
 
-	chmod 0400 "$KEYDIR"/dropbear_*_host_key "$KEYDIR"/dropbear_*_host_key.pub 2>/dev/null || true
+
+## HELPER FUNCTIONS
+is_root() {
+	[ "$(id -u)" -eq 0 ]
+	return $?
 }
 
-pid_is_live_dropbear() {
-	_PID="$1"
-	[ -n "$_PID" ] || return 1
-	kill -0 "$_PID" 2>/dev/null || return 1
-	CMDLINE="$(tr '\000' ' ' < "/proc/$_PID/cmdline" 2>/dev/null || true)"
-	case "$CMDLINE" in
-		"$DAEMON"*)
-			return 0
-			;;
-		*)
-			return 1
-			;;
-	esac
+is_all_host_keys_available() {
+	[ -f "${KEYDIR}/dropbear_rsa_host_key" ] && [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] && [ -f "${KEYDIR}/dropbear_ed25519_host_key" ] && return 0
+	return 1
 }
 
-pid_matches_instance() {
-	_PID="$1"
-	[ -n "$_PID" ] || return 1
-	CMDLINE="$(tr '\000' ' ' < "/proc/$_PID/cmdline" 2>/dev/null || true)"
-	case "$CMDLINE" in
-		"$DAEMON"*"-p ${PORT}"*|"$DAEMON"*"-p${PORT}"*)
-			return 0
-			;;
-		*)
-			return 1
-			;;
-	esac
+is_any_host_key_available() {
+	[ -f "${KEYDIR}/dropbear_rsa_host_key" ] || [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] || [ -f "${KEYDIR}/dropbear_ed25519_host_key" ] && return 0
+	return 1
 }
 
 get_dropbear_pid() {
 	if [ -f "$PIDFILE" ]; then
-		PID="$(cat "$PIDFILE" 2>/dev/null)"
-		if pid_is_live_dropbear "$PID" && pid_matches_instance "$PID"; then
-			echo "$PID"
-			return 0
+		PIDFILE_PID="$(cat "$PIDFILE" 2> /dev/null)"
+		if [ -n "${PIDFILE_PID}" ]; then
+			RUNNING_PIDS="$(/sbin/pidof "$(basename "${DAEMON}")" 2> /dev/null)"
+			for RUNNING_PID in ${RUNNING_PIDS}; do
+				if [ "${RUNNING_PID}" = "${PIDFILE_PID}" ]; then
+					echo "${PIDFILE_PID}"
+					return 0
+				fi
+			done
+			# If the code reaches here, no running process has this pid. We silently clear it.
+			clear_dropbear_pid
 		fi
 	fi
-
-	for PID in $(pidof dropbear 2>/dev/null); do
-		if pid_is_live_dropbear "$PID" && pid_matches_instance "$PID"; then
-			echo "$PID"
-			return 0
-		fi
-	done
-
-	return 1
 }
 
-start() {
-	echo -n "Starting dropbear: "
-	create_keys
+clear_dropbear_pid() {
+	[ -f "${PIDFILE}" ] && rm -f "${PIDFILE}" > /dev/null 2>&1 || true
+}
 
-	PID="$(get_dropbear_pid 2>/dev/null || true)"
-	if [ -n "$PID" ]; then
+## COMMANDS
+start() {
+	if ! is_root; then
+		echo "You must be root to start or stop dropbear."
+		return 1
+	fi
+
+	if ! is_any_host_key_available; then
+		echo "No host keys found in ${KEYDIR}."
+		echo "Generate them with: $0 create-host-keys."
+		return 1
+	fi
+
+	echo -n "Starting dropbear: "
+
+	PID="$(get_dropbear_pid)"
+	if [ -n "${PID}" ]; then
 		echo "already running"
-		echo "$PID" > "$PIDFILE"
 		return 0
 	fi
 
-	rm -f "$PIDFILE"
-
-	"$DAEMON" \
-		-p ${PORT} \
-		-P "$PIDFILE" \
-		-w
-
+	clear_dropbear_pid
+	"${DAEMON}" -P "${PIDFILE}" ${DROPBEAR_FLAGS}
 	sleep 1
 
-	PID="$(get_dropbear_pid 2>/dev/null || true)"
-	if [ -n "$PID" ]; then
-		echo "$PID" > "$PIDFILE"
-		echo "ok"
-		return 0
+	PID="$(get_dropbear_pid)"
+	if [ -z "${PID}" ]; then
+		echo "failed"
+		return 1
 	fi
 
-	echo "failed"
-	return 1
+	echo "ok"
+	return 0
 }
 
 stop() {
+	if ! is_root; then
+		echo "You must be root to start or stop dropbear."
+		return 1
+	fi
+
 	echo -n "Stopping dropbear: "
 
-	PID="$(get_dropbear_pid 2>/dev/null || true)"
-	if [ -z "$PID" ]; then
-		rm -f "$PIDFILE"
+	PID="$(get_dropbear_pid)"
+	if [ -z "${PID}" ]; then
 		echo "not running"
 		return 0
 	fi
 
-	kill "$PID" 2>/dev/null || true
+	kill "${PID}" 2> /dev/null || true
 	sleep 1
+	kill -0 "${PID}" 2> /dev/null && kill -9 "${PID}" 2> /dev/null || true
 
-	if kill -0 "$PID" 2>/dev/null; then
-		kill -9 "$PID" 2>/dev/null || true
+	PID="$(get_dropbear_pid)"
+	if [ -n "${PID}" ]; then
+		echo "failed"
+		return 1
 	fi
 
-	rm -f "$PIDFILE"
+	clear_dropbear_pid
 	echo "ok"
 	return 0
 }
 
 status() {
-	PID="$(get_dropbear_pid 2>/dev/null || true)"
-	if [ -n "$PID" ]; then
-		echo "$PID" > "$PIDFILE"
-		echo "dropbear (pid $PID) is running"
+	PID="$(get_dropbear_pid)"
+	if [ -n "${PID}" ]; then
+		echo "dropbear (pid ${PID}) is running"
 		return 0
+	else
+		echo "dropbear is stopped"
+		return 3
 	fi
-
-	rm -f "$PIDFILE"
-	echo "dropbear is stopped"
-	return 3
 }
 
 restart() {
+	if ! is_root; then
+		echo "You must be root to start or stop dropbear."
+		return 1
+	fi
+
 	stop
 	start
 }
 
+create_host_keys() {
+	if ! is_root; then
+		echo "You must be root to generate dropbear host keys."
+		return 1
+	fi
+
+	[ "$1" = "--force" ] && rm -rf "${KEYDIR}"
+
+	if is_all_host_keys_available; then
+		echo "All keys present in ${KEYDIR}"
+		echo "To generate new keys, use --force"
+		return 0
+	fi
+
+	[ ! -d "${KEYDIR}" ] && mkdir -p -m 0700 "${KEYDIR}"
+	[ ! -f "${KEYDIR}/dropbear_rsa_host_key" ]     && "${DROPBEARKEY}" -t rsa     -s 4096 -C "$(hostname)" -f "${KEYDIR}/dropbear_rsa_host_key"     && chmod 0400 "${KEYDIR}/dropbear_rsa_host_key*"
+	[ ! -f "${KEYDIR}/dropbear_ecdsa_host_key" ]   && "${DROPBEARKEY}" -t ecdsa   -s 521  -C "$(hostname)" -f "${KEYDIR}/dropbear_ecdsa_host_key"   && chmod 0400 "${KEYDIR}/dropbear_ecdsa_host_key"
+	[ ! -f "${KEYDIR}/dropbear_ed25519_host_key" ] && "${DROPBEARKEY}" -t ed25519         -C "$(hostname)" -f "${KEYDIR}/dropbear_ed25519_host_key" && chmod 0400 "${KEYDIR}/dropbear_ed25519_host_key"
+
+	return 0
+}
+
+
+## PARSER
 case "$1" in
 	start)
 		start
@@ -158,14 +191,17 @@ case "$1" in
 	stop)
 		stop
 		;;
-	restart|reload)
+	restart)
 		restart
 		;;
 	status)
 		status
 		;;
+	create-host-keys)
+		create_host_keys $2
+		;;
 	*)
-		echo "Usage: $0 {start|stop|restart|reload|status}"
+		echo "Usage: $0 {start|stop|restart|status|create-host-keys}"
 		exit 1
 		;;
 esac
