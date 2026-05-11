@@ -27,7 +27,7 @@ case "$(file -b "${DAEMON_BASE}" | head -n 1)" in
 	*executable*)
 		DAEMON=/usr/sbin/dropbear ;;
 	*script*)
-		case `uname -m` in
+		case "$(uname -m)" in
 			i386) DAEMON="/usr/sbin/dropbear-386" ;;
 			*) DAEMON="/usr/sbin/dropbear-486" ;;
 		esac ;;
@@ -45,30 +45,43 @@ is_root() {
 }
 
 is_all_host_keys_available() {
-	[ -f "${KEYDIR}/dropbear_rsa_host_key" ] && [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] && [ -f "${KEYDIR}/dropbear_ed25519_host_key" ] && return 0
+	if [ -f "${KEYDIR}/dropbear_rsa_host_key" ] && \
+	   [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] && \
+	   [ -f "${KEYDIR}/dropbear_ed25519_host_key" ]; then
+		return 0
+	fi
 	return 1
 }
 
 is_any_host_key_available() {
-	[ -f "${KEYDIR}/dropbear_rsa_host_key" ] || [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] || [ -f "${KEYDIR}/dropbear_ed25519_host_key" ] && return 0
+	if [ -f "${KEYDIR}/dropbear_rsa_host_key" ] || \
+	   [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] || \
+	   [ -f "${KEYDIR}/dropbear_ed25519_host_key" ]; then
+		return 0
+	fi
 	return 1
 }
 
 get_dropbear_pid() {
-	if [ -f "$PIDFILE" ]; then
-		PIDFILE_PID="$(cat "$PIDFILE" 2> /dev/null)"
-		if [ -n "${PIDFILE_PID}" ]; then
-			RUNNING_PIDS="$(/sbin/pidof "$(basename "${DAEMON}")" 2> /dev/null)"
-			for RUNNING_PID in ${RUNNING_PIDS}; do
-				if [ "${RUNNING_PID}" = "${PIDFILE_PID}" ]; then
-					echo "${PIDFILE_PID}"
-					return 0
-				fi
-			done
-			# If the code reaches here, no running process has this pid. We silently clear it.
-			clear_dropbear_pid
+	if [ -f "${PIDFILE}" ]; then
+		PIDFILE_PID="$(cat "${PIDFILE}" 2> /dev/null)"
+		# Handle invalid PIDs
+		case "${PIDFILE_PID}" in
+			''|*[!0-9]*)
+				clear_dropbear_pid
+				return 1
+				;;
+		esac
+		# Validate the PID against running processes
+		if ps "${PIDFILE_PID}" 2> /dev/null | grep -q "$(basename "${DAEMON}")"; then
+			echo "${PIDFILE_PID}"
+			return 0
 		fi
+		# If the code reaches here, no running process has this pid. We silently clear it.
+		clear_dropbear_pid
+		return 1
 	fi
+	return 1
 }
 
 clear_dropbear_pid() {
@@ -175,10 +188,11 @@ create_host_keys() {
 	fi
 
 	[ ! -d "${KEYDIR}" ] && mkdir -p -m 0700 "${KEYDIR}"
-	[ ! -f "${KEYDIR}/dropbear_rsa_host_key" ]     && "${DROPBEARKEY}" -t rsa     -s 4096 -C "$(hostname)" -f "${KEYDIR}/dropbear_rsa_host_key"     && chmod 0400 "${KEYDIR}/dropbear_rsa_host_key*"
-	[ ! -f "${KEYDIR}/dropbear_ecdsa_host_key" ]   && "${DROPBEARKEY}" -t ecdsa   -s 521  -C "$(hostname)" -f "${KEYDIR}/dropbear_ecdsa_host_key"   && chmod 0400 "${KEYDIR}/dropbear_ecdsa_host_key"
-	[ ! -f "${KEYDIR}/dropbear_ed25519_host_key" ] && "${DROPBEARKEY}" -t ed25519         -C "$(hostname)" -f "${KEYDIR}/dropbear_ed25519_host_key" && chmod 0400 "${KEYDIR}/dropbear_ed25519_host_key"
+	[ ! -f "${KEYDIR}/dropbear_rsa_host_key" ]     && "${DROPBEARKEY}" -t rsa     -s 4096 -C "$(hostname)" -f "${KEYDIR}/dropbear_rsa_host_key"     && chmod 0400 "${KEYDIR}"/dropbear_rsa_host_key* 2> /dev/null     || true
+	[ ! -f "${KEYDIR}/dropbear_ecdsa_host_key" ]   && "${DROPBEARKEY}" -t ecdsa   -s 521  -C "$(hostname)" -f "${KEYDIR}/dropbear_ecdsa_host_key"   && chmod 0400 "${KEYDIR}"/dropbear_ecdsa_host_key* 2> /dev/null   || true
+	[ ! -f "${KEYDIR}/dropbear_ed25519_host_key" ] && "${DROPBEARKEY}" -t ed25519         -C "$(hostname)" -f "${KEYDIR}/dropbear_ed25519_host_key" && chmod 0400 "${KEYDIR}"/dropbear_ed25519_host_key* 2> /dev/null || true
 
+	echo "done"
 	return 0
 }
 
@@ -198,7 +212,7 @@ case "$1" in
 		status
 		;;
 	create-host-keys)
-		create_host_keys $2
+		create_host_keys "$2"
 		;;
 	*)
 		echo "Usage: $0 {start|stop|restart|status|create-host-keys}"
