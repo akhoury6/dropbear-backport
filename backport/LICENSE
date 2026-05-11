@@ -21,6 +21,6 @@ damages, or other liability, whether in an action of contract, tort, or otherwis
 arising from, out of, or in connection with the software or backport code, or the use or other
 dealings in the software or backport code.
 
-3. The Backport Code is a derivative work of Dropbear SSH (https://github.com/mkj/dropbear),
+3. The Backport Code modifies the code for Dropbear (https://github.com/mkj/dropbear),
 which is licensed under its own license. Users should refer to the original Dropbear
-LICENSE for the terms applicable to the original code.
+LICENSE for the terms applicable to Dropbear itself.

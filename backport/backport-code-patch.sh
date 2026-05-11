@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ##
-# All of the changes here are made to be idempotent.
+# All of the changes here are idempotent.
 ##
 
 # Disable post-quantum key exchange features because the target compiler/platform
@@ -87,3 +87,8 @@ perl -0pi -e '
 s/\bdropbear_exit\("chown\(%\.100s, %u, %u\) failed: %\.100s",/dropbear_log(LOG_ERR,\n\t\t\t\t\t"chown(%.100s, %u, %u) failed: %.100s",/g;
 s/\bdropbear_exit\("chmod\(%\.100s, 0%o\) failed: %\.100s",/dropbear_log(LOG_ERR,\n\t\t\t\t\t"chmod(%.100s, 0%o) failed: %.100s",/g;
 ' src/sshpty.c
+
+# Older libc/toolchains may not provide reallocarray(), causing scp to fail to build/link.
+# Inject a fallback plus <errno.h> so old-system builds keep safe overflow-checked allocation.
+perl -0pi -e 'unless (/#include <errno\.h>/) { s/#include "includes\.h"\n/#include "includes.h"\n#include <errno.h>\n/ }' src/scp.c
+perl -0pi -e 'unless (/compat_reallocarray/) { s/#include "includes\.h"\n/#include "includes.h"\n\n#ifndef HAVE_REALLOCARRAY\nstatic void *\ncompat_reallocarray(void *ptr, size_t nmemb, size_t size)\n{\n\tif (size != 0 && nmemb > ((size_t)-1) \/ size) {\n\t\terrno = ENOMEM;\n\t\treturn NULL;\n\t}\n\treturn realloc(ptr, nmemb * size);\n}\n#define reallocarray compat_reallocarray\n#endif\n/ }' src/scp.c
