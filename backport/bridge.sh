@@ -29,6 +29,6 @@ DIR_RAW=`dirname "$0"`
 DIR=`cd "${DIR_RAW}" 2>/dev/null && pwd`
 
 case `uname -m` in
-	i386) exec ${DIR}/${NAME}-386 "$@" ;;
-	*) exec ${DIR}/${NAME}-486 "$@" ;;
+	i386) exec "${DIR}/${NAME}-386" "$@" ;;
+	*) exec "${DIR}/${NAME}-486" "$@" ;;
 esac
