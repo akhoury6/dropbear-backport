@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # Optional script for a dual 386/486-arch installation.
 #
