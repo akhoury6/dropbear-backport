@@ -99,6 +99,20 @@ chkconfig --list dropbear
 
 Edit the init script to change the port that the server runs on.
 
+#### Install -multi
+
+If using the install script with the -multi flag, the script will install both sets of binaries (i386 and i486) with the
+suffixes `-386` and `-486` respectively. A shim will then be used to auto-select the correct architecture and run that
+executable. For example:
+
+```
+/usr/sbin/dropbear         # shell script shim
+/usr/sbin/dropbear-386     # 386 binary
+/usr/sbin/dropbear-486     # 486 binary
+```
+
+Both sets of binaries have to have been compiled to use install -multi.
+
 ### Usage Notes
 
 #### SSH Daemon Options

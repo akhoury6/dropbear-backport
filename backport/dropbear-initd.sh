@@ -88,6 +88,26 @@ clear_dropbear_pid() {
 	[ -f "${PIDFILE}" ] && rm -f "${PIDFILE}" > /dev/null 2>&1 || true
 }
 
+create_host_key() {
+	ALGO_LG="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
+	ALGO_SM="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+	SIZE="$2"
+	KEY_FILE="${KEYDIR}/dropbear_${ALGO_SM}_host_key"
+
+	if [ ! -f "${KEY_FILE}" ]; then
+		echo "Creating ${ALGO_LG} host key..."
+		if [ -n "${SIZE}" ]; then
+			"${DROPBEARKEY}" -t "${ALGO_SM}" -s "${SIZE}" -C "$(hostname)" -f "${KEY_FILE}"
+		else
+			"${DROPBEARKEY}" -t "${ALGO_SM}" -C "$(hostname)" -f "${KEY_FILE}"
+		fi
+		chmod 0400 "${KEY_FILE}"
+		chmod 0444 "${KEY_FILE}.pub"
+	else
+		echo "${ALGO_LG} host key already exists. Skipped."
+	fi
+}
+
 ## COMMANDS
 start() {
 	if ! is_root; then
@@ -179,7 +199,7 @@ create_host_keys() {
 		return 1
 	fi
 
-	[ "$1" = "--force" ] && rm -rf "${KEYDIR}"
+	[ "$1" = "--force" ] && rm -rf "${KEYDIR}" && echo "Deleted ${KEYDIR}."
 
 	if is_all_host_keys_available; then
 		echo "All keys present in ${KEYDIR}"
@@ -187,10 +207,12 @@ create_host_keys() {
 		return 0
 	fi
 
-	[ ! -d "${KEYDIR}" ] && mkdir -p -m 0700 "${KEYDIR}"
-	[ ! -f "${KEYDIR}/dropbear_rsa_host_key" ]     && "${DROPBEARKEY}" -t rsa     -s 4096 -C "$(hostname)" -f "${KEYDIR}/dropbear_rsa_host_key"     && chmod 0400 "${KEYDIR}"/dropbear_rsa_host_key* 2> /dev/null     || true
-	[ ! -f "${KEYDIR}/dropbear_ecdsa_host_key" ]   && "${DROPBEARKEY}" -t ecdsa   -s 521  -C "$(hostname)" -f "${KEYDIR}/dropbear_ecdsa_host_key"   && chmod 0400 "${KEYDIR}"/dropbear_ecdsa_host_key* 2> /dev/null   || true
-	[ ! -f "${KEYDIR}/dropbear_ed25519_host_key" ] && "${DROPBEARKEY}" -t ed25519         -C "$(hostname)" -f "${KEYDIR}/dropbear_ed25519_host_key" && chmod 0400 "${KEYDIR}"/dropbear_ed25519_host_key* 2> /dev/null || true
+	echo "Creating ${KEYDIR}..."
+	[ ! -d "${KEYDIR}" ] && mkdir -p -m 0755 "${KEYDIR}"
+
+	create_host_key rsa 4096
+	create_host_key ecdsa 521
+	create_host_key ed25519
 
 	echo "done"
 	return 0

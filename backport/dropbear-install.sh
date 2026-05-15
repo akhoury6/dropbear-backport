@@ -3,7 +3,7 @@
 set -e
 
 usage() {
-	echo "Usage: ${0##*/} -i386 | -i486 | -auto | -multi"
+	echo "Usage: `basename $0` -i386 | -i486 | -auto | -multi"
 	echo ""
 	echo "Install dropbear:"
 	echo "  -i386    Install the i386 binaries and the init.d script"
@@ -18,13 +18,15 @@ if [ $# -ne 1 ]; then
 	usage
 fi
 
-if [ "$(id -u)" -ne 0 ]; then
+if [ "${USER}" != "root" ]; then
 	echo "This script must be run with root privileges."
 	exit 1
 fi
 
-SCRIPT_DIR="$(cd "${0%/*}" 2>/dev/null || cd .; pwd)"
-DROPBEAR_DIR="$(cd "${SCRIPT_DIR}/../" && pwd)"
+#SCRIPT_DIR="$(cd "${0%/*}" 2>/dev/null || cd .; pwd)"
+SCRIPT_DIR_RAW=`dirname "$0"`
+SCRIPT_DIR=`cd "${SCRIPT_DIR_RAW}" 2>/dev/null && pwd`
+DROPBEAR_DIR=`cd "${SCRIPT_DIR}/.." && pwd`
 i386_BUILD_DIR="${DROPBEAR_DIR}/bin/build/i386"
 i486_BUILD_DIR="${DROPBEAR_DIR}/bin/build/i486"
 i386_SUFFIX=""
@@ -33,9 +35,11 @@ i486_SUFFIX=""
 TARGET_FLAG="$1"
 case "${TARGET_FLAG}" in
 	-auto)
-		case `uname -m` in
+		ARCH=`uname -m`
+		case "${ARCH}" in
 			i386) INSTALL_i386='true' ;;
-			*) INSTALL_i486='true' ;;
+			i486|i586|i686) INSTALL_i486='true' ;;
+			*) echo "The ${ARCH} architecture is not supported by this script."; exit 1;;
 		esac
 		;;
 	-i386)
@@ -60,34 +64,51 @@ esac
 
 # Install Binaries to their locations
 does_build_exist() {
+	echo "Verifying Source:"
+	local SRC_DIR MISSING_BINARY
 	SRC_DIR="${1}"
-	if [ ! -f "${SRC_DIR}/dbclient" ] || [ ! -f "${SRC_DIR}/dropbear" ] || [ ! -f "${SRC_DIR}/dropbearkey" ] || [ ! -f "${SRC_DIR}/scp" ]; then
-		echo "No dropbear binaries exist in '${SRC_DIR}'. Run 'dropbear-compile.sh ${TARGET_FLAG}' to build them before running this install script."
+	MISSING_BINARY="false"
+	[ ! -f "${SRC_DIR}/dbclient" ] && MISSING_BINARY="true"
+	[ ! -f "${SRC_DIR}/dropbear" ] && MISSING_BINARY="true"
+	[ ! -f "${SRC_DIR}/dropbearkey" ] && MISSING_BINARY="true"
+	[ ! -f "${SRC_DIR}/scp" ] && MISSING_BINARY="true"
+	if [ "${MISSING_BINARY}" = "true" ]; then
+		echo "  No dropbear binaries exist in '${SRC_DIR}'. Run 'dropbear-compile.sh ${TARGET_FLAG}' to build them before running this install script."
 		exit 1
 	fi
+	echo "  Binaries found at ${SRC_DIR}"
 	return 0
 }
 
 install_binaries() {
+	echo "Installing Binaries:"
+	local SRC_DIR EXEC_SUFFIX TARGETS target
 	SRC_DIR="${1}"
 	EXEC_SUFFIX="${2}"
-	ARR=( /usr/sbin/dropbear /usr/bin/dbclient /usr/bin/dropbearkey /usr/bin/scp )
-	for p in "${ARR[@]}"; do
-		printf "  %s\n" "${p}${EXEC_SUFFIX}"
-		install -m 0755 -o root -g root "${SRC_DIR}/$(basename "${p}")" "${p}${EXEC_SUFFIX}"
+	TARGETS="/usr/sbin/dropbear /usr/bin/dbclient /usr/bin/dropbearkey /usr/bin/scp"
+	for target in $TARGETS; do
+		printf "  %s\n" "${target}${EXEC_SUFFIX}"
+		cp -f "${SRC_DIR}/`basename $target`" "${target}${EXEC_SUFFIX}"
+		chmod 0755 "${target}${EXEC_SUFFIX}"
+		chown root "${target}${EXEC_SUFFIX}"
+		chgrp root "${target}${EXEC_SUFFIX}"
 	done
 }
 
 install_bridge() {
+	echo "Installing Bridge:"
+	local SRC_DIR TARGETS target
 	SRC_DIR="${1}"
-	ARR=( /usr/sbin/dropbear /usr/bin/dbclient /usr/bin/dropbearkey /usr/bin/scp )
-	for p in "${ARR[@]}"; do
-		printf "  %s\n" "${p}"
-		install -m 0755 -o root -g root "${SRC_DIR}/bridge.sh" "${p}"
+	TARGETS="/usr/sbin/dropbear /usr/bin/dbclient /usr/bin/dropbearkey /usr/bin/scp"
+	for target in $TARGETS; do
+		printf "  %s\n" "${target}"
+		cp -f "${SRC_DIR}/bridge.sh" "${target}"
+		chmod 0755 "${target}"
+		chown root "${target}"
+		chgrp root "${target}"
 	done
 }
 
-echo "Installing Binaries:"
 [ -n "${INSTALL_i386}" ] && does_build_exist "${i386_BUILD_DIR}"
 [ -n "${INSTALL_i486}" ] && does_build_exist "${i486_BUILD_DIR}"
 [ -n "${INSTALL_i386}" ] && install_binaries "${i386_BUILD_DIR}" "${i386_SUFFIX}"
@@ -103,56 +124,39 @@ if [ -d /etc/skel ]; then
 	chmod 0700 /etc/skel/.ssh
 fi
 
-
-# Initialize host keys
-echo "Installing host keys:"
-KEYDIR=/etc/dropbear
-mkdir -m 0700 -p "${KEYDIR}"
-ARR=( "rsa 4096" "ecdsa 521" "ed25519" )
-for p in "${ARR[@]}"; do
-	keytype="$(echo "${p}" | awk '{print $1}')"
-	keysize="$(echo "${p}" | awk '{print $2}')"
-	[ -n "${keysize}" ] && keysize_param="-s ${keysize}"
-	filename="${KEYDIR}/dropbear_${keytype}_host_key"
-	if [ ! -f "${filename}" ]; then
-		printf "  %s\n" "${p}"
-		/usr/bin/dropbearkey -t ${keytype} ${keysize_param} -C "$(hostname)" -f "${filename}"
-		chmod 0400 "${filename}" || true
-		chmod 0644 "${filename}.pub" || true
-	fi
-done
-
-
 # Install init script on systems that use SysVinit
+INIT_SCRIPT="/etc/rc.d/init.d/dropbear"
 echo "Installing init.d script:"
-if [ -d /etc/rc.d/init.d ] && [ -d /etc/rc.d/rc0.d ] && \
-	[ -d /etc/rc.d/rc1.d ] && [ -d /etc/rc.d/rc2.d ] && \
-	[ -d /etc/rc.d/rc3.d ] && [ -d /etc/rc.d/rc4.d ] && \
+if [ -d /etc/rc.d/init.d ] && [ -d /etc/rc.d/rc0.d ] &&
+	[ -d /etc/rc.d/rc1.d ] && [ -d /etc/rc.d/rc2.d ] &&
+	[ -d /etc/rc.d/rc3.d ] && [ -d /etc/rc.d/rc4.d ] &&
 	[ -d /etc/rc.d/rc5.d ] && [ -d /etc/rc.d/rc6.d ]; then
 
-	INIT_SCRIPT="/etc/rc.d/init.d/dropbear"
 	printf "  %s\n" "${INIT_SCRIPT}"
-	cp -f "${SCRIPT_DIR}/dropbear_initd.sh" "${INIT_SCRIPT}"
+	cp -f "${SCRIPT_DIR}/dropbear-initd.sh" "${INIT_SCRIPT}"
 	chmod 0755 "${INIT_SCRIPT}"
-	chown root:root "${INIT_SCRIPT}"
+	chown root "${INIT_SCRIPT}"
+	chgrp root "${INIT_SCRIPT}"
 
-	if command -v chkconfig >/dev/null 2>&1; then
+	if type chkconfig >/dev/null 2>&1; then
 		printf "  %s\n" "chkconfig --add dropbear"
 		chkconfig --add dropbear || true
 		printf "  %s\n" "chkconfig dropbear on"
 		chkconfig dropbear on || true
 	else
-		ARR=( /etc/rc.d/rc0.d/K25dropbear \
-			/etc/rc.d/rc1.d/K25dropbear \
-			/etc/rc.d/rc2.d/K25dropbear \
-			/etc/rc.d/rc3.d/S55dropbear \
-			/etc/rc.d/rc4.d/S55dropbear \
-			/etc/rc.d/rc5.d/S55dropbear \
-			/etc/rc.d/rc6.d/K25dropbear
-		)
-		for p in "${ARR[@]}"; do
-			printf "  %s\n" "${p}"
-			ln -sf "${INIT_SCRIPT}" "${p}"
+		RUNLEVEL_TARGETS=`cat << 'LIST'
+/etc/rc.d/rc0.d/K25dropbear
+/etc/rc.d/rc1.d/K25dropbear
+/etc/rc.d/rc2.d/K25dropbear
+/etc/rc.d/rc3.d/S55dropbear
+/etc/rc.d/rc4.d/S55dropbear
+/etc/rc.d/rc5.d/S55dropbear
+/etc/rc.d/rc6.d/K25dropbear
+LIST
+`
+		for target in $RUNLEVEL_TARGETS; do
+			printf "  %s\n" "${target}"
+			ln -sf "${INIT_SCRIPT}" "${target}"
 		done
 	fi
 else
@@ -160,10 +164,18 @@ else
 fi
 
 
+# Initialize host keys
+echo "Installing host keys:"
+if [ -x "${INIT_SCRIPT}" ]; then
+	"${INIT_SCRIPT}" create-host-keys
+else
+	"Init script not executable. Skipping."
+fi
+
 # Update /etc/services
 if [ -e /etc/services ]; then
 	echo "Updating /etc/services:"
-	SERVICE_PORT_22="$(grep -E '[[:blank:]]22/tcp' /etc/services | awk 'NR==1 {print $1}')"
+	SERVICE_PORT_22=`grep '^[[:blank:]]*[^#]*[[:blank:]]22/tcp' /etc/services | awk '{print $1}'`
 	if [ -z "${SERVICE_PORT_22}" ]; then
 		perl -pi -e 's/^([^#]*22\/tcp)/#$1/' /etc/services
 		if grep -qE '[[:blank:]]21/tcp' /etc/services; then
@@ -185,9 +197,8 @@ fi
 # Finish Up
 if [ -f /etc/rc.d/init.d/dropbear ]; then
 	cat << EOF
-Done.
-
-
+Installation Complete.
+========================================
 Init script:
   /etc/rc.d/init.d/dropbear
 

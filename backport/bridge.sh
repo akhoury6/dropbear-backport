@@ -19,10 +19,16 @@
 # Repeat for dbclient, dropbearkey, and scp
 #
 
-NAME=${0##*/}
-DIR=$(cd "${0%/*}" 2>/dev/null || cd .; pwd)
+### These may or may not be compatible with your version of bash.
+### Leaving them here, commented, in case someone needs them.
+# NAME=${0##*/}
+# DIR=$(cd "${0%/*}" 2>/dev/null || cd .; pwd)
+
+NAME=`basename "$0"`
+DIR_RAW=`dirname "$0"`
+DIR=`cd "${DIR_RAW}" 2>/dev/null && pwd`
 
 case `uname -m` in
-	i386) ${DIR}/${NAME}-386 "$@" ;;
-	*) ${DIR}/${NAME}-486 "$@" ;;
+	i386) exec ${DIR}/${NAME}-386 "$@" ;;
+	*) exec ${DIR}/${NAME}-486 "$@" ;;
 esac
