@@ -23,11 +23,11 @@ KEYDIR=/etc/dropbear
 [ -x "${DAEMON_BASE}" ] || exit 1
 [ -x "${DROPBEARKEY}" ] || exit 1
 
-case "$(file -b "${DAEMON_BASE}" | head -n 1)" in
+case `file -b "${DAEMON_BASE}" | head -n 1` in
 	*executable*)
 		DAEMON=/usr/sbin/dropbear ;;
 	*script*)
-		case "$(uname -m)" in
+		case `uname -m` in
 			i386) DAEMON="/usr/sbin/dropbear-386" ;;
 			*) DAEMON="/usr/sbin/dropbear-486" ;;
 		esac ;;
@@ -40,13 +40,13 @@ esac
 
 ## HELPER FUNCTIONS
 is_root() {
-	[ "$(id -u)" -eq 0 ]
+	[ `id -u` -eq 0 ]
 	return $?
 }
 
 is_all_host_keys_available() {
-	if [ -f "${KEYDIR}/dropbear_rsa_host_key" ] && \
-	   [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] && \
+	if [ -f "${KEYDIR}/dropbear_rsa_host_key" ] &&
+	   [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] &&
 	   [ -f "${KEYDIR}/dropbear_ed25519_host_key" ]; then
 		return 0
 	fi
@@ -54,8 +54,8 @@ is_all_host_keys_available() {
 }
 
 is_any_host_key_available() {
-	if [ -f "${KEYDIR}/dropbear_rsa_host_key" ] || \
-	   [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] || \
+	if [ -f "${KEYDIR}/dropbear_rsa_host_key" ] ||
+	   [ -f "${KEYDIR}/dropbear_ecdsa_host_key" ] ||
 	   [ -f "${KEYDIR}/dropbear_ed25519_host_key" ]; then
 		return 0
 	fi
@@ -64,7 +64,7 @@ is_any_host_key_available() {
 
 get_dropbear_pid() {
 	if [ -f "${PIDFILE}" ]; then
-		PIDFILE_PID="$(cat "${PIDFILE}" 2> /dev/null)"
+		PIDFILE_PID=`cat "${PIDFILE}" 2> /dev/null`
 		# Handle invalid PIDs
 		case "${PIDFILE_PID}" in
 			''|*[!0-9]*)
@@ -73,7 +73,8 @@ get_dropbear_pid() {
 				;;
 		esac
 		# Validate the PID against running processes
-		if ps "${PIDFILE_PID}" 2> /dev/null | grep -q "$(basename "${DAEMON}")"; then
+		BNAME=`basename "${DAEMON}"`
+		if ps -p "${PIDFILE_PID}" 2> /dev/null | grep "${BNAME}" > /dev/null 2>&1; then
 			echo "${PIDFILE_PID}"
 			return 0
 		fi
@@ -89,17 +90,17 @@ clear_dropbear_pid() {
 }
 
 create_host_key() {
-	ALGO_LG="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
-	ALGO_SM="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+	ALGO_LG=`echo "$1" | tr '[:lower:]' '[:upper:]'`
+	ALGO_SM=`echo "$1" | tr '[:upper:]' '[:lower:]'`
 	SIZE="$2"
 	KEY_FILE="${KEYDIR}/dropbear_${ALGO_SM}_host_key"
 
 	if [ ! -f "${KEY_FILE}" ]; then
 		echo "Creating ${ALGO_LG} host key..."
 		if [ -n "${SIZE}" ]; then
-			"${DROPBEARKEY}" -t "${ALGO_SM}" -s "${SIZE}" -C "$(hostname)" -f "${KEY_FILE}"
+			"${DROPBEARKEY}" -t "${ALGO_SM}" -s "${SIZE}" -C "`hostname`" -f "${KEY_FILE}"
 		else
-			"${DROPBEARKEY}" -t "${ALGO_SM}" -C "$(hostname)" -f "${KEY_FILE}"
+			"${DROPBEARKEY}" -t "${ALGO_SM}" -C "`hostname`" -f "${KEY_FILE}"
 		fi
 		chmod 0400 "${KEY_FILE}"
 		chmod 0444 "${KEY_FILE}.pub"
@@ -110,30 +111,34 @@ create_host_key() {
 
 ## COMMANDS
 start() {
-	if ! is_root; then
+	if is_root; then :; else
 		echo "You must be root to start or stop dropbear."
 		return 1
 	fi
 
-	if ! is_any_host_key_available; then
+	if is_any_host_key_available; then :; else
 		echo "No host keys found in ${KEYDIR}."
 		echo "Generate them with: $0 create-host-keys."
 		return 1
 	fi
 
-	echo -n "Starting dropbear: "
+	printf "Starting dropbear: "
 
-	PID="$(get_dropbear_pid)"
+	PID=`get_dropbear_pid`
 	if [ -n "${PID}" ]; then
 		echo "already running"
 		return 0
 	fi
 
 	clear_dropbear_pid
-	"${DAEMON}" -P "${PIDFILE}" ${DROPBEAR_FLAGS}
+	if [ -n "${DROPBEAR_FLAGS}" ]; then
+		"${DAEMON}" -P "${PIDFILE}" ${DROPBEAR_FLAGS}
+	else
+		"${DAEMON}" -P "${PIDFILE}"
+	fi
 	sleep 1
 
-	PID="$(get_dropbear_pid)"
+	PID=`get_dropbear_pid`
 	if [ -z "${PID}" ]; then
 		echo "failed"
 		return 1
@@ -144,14 +149,14 @@ start() {
 }
 
 stop() {
-	if ! is_root; then
+	if is_root; then :; else
 		echo "You must be root to start or stop dropbear."
 		return 1
 	fi
 
-	echo -n "Stopping dropbear: "
+	printf "Stopping dropbear: "
 
-	PID="$(get_dropbear_pid)"
+	PID=`get_dropbear_pid`
 	if [ -z "${PID}" ]; then
 		echo "not running"
 		return 0
@@ -161,7 +166,7 @@ stop() {
 	sleep 1
 	kill -0 "${PID}" 2> /dev/null && kill -9 "${PID}" 2> /dev/null || true
 
-	PID="$(get_dropbear_pid)"
+	PID=`get_dropbear_pid`
 	if [ -n "${PID}" ]; then
 		echo "failed"
 		return 1
@@ -173,7 +178,7 @@ stop() {
 }
 
 status() {
-	PID="$(get_dropbear_pid)"
+	PID=`get_dropbear_pid`
 	if [ -n "${PID}" ]; then
 		echo "dropbear (pid ${PID}) is running"
 		return 0
@@ -184,7 +189,7 @@ status() {
 }
 
 restart() {
-	if ! is_root; then
+	if is_root; then :; else
 		echo "You must be root to start or stop dropbear."
 		return 1
 	fi
@@ -194,7 +199,7 @@ restart() {
 }
 
 create_host_keys() {
-	if ! is_root; then
+	if is_root; then :; else
 		echo "You must be root to generate dropbear host keys."
 		return 1
 	fi
